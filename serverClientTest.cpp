@@ -1,77 +1,116 @@
 #include "serverclientconnection.h"
 
-ServerClientTest::ServerClientTest(QString serverIP_inp, QString clientIP_base_inp)
+ServerClientTest::ServerClientTest(QString logFileName_inp,
+                                   QString serverIP_inp,
+                                   QString clientIP_base_inp)
 {
+    logFileName = logFileName_inp;
     clientIP_base = clientIP_base_inp;
     serverIP = serverIP_inp;
 }
 
+bool ServerClientTest::findLogLine(QTime sendTime, QString searchLine)
+{
+    QTextStream logStream (&logFile);
+    QString line;
+    do {
+        line = logStream.readLine();
+        if (line.contains(searchLine, Qt::CaseSensitive))
+        {
+            auto recordTime = QTime::fromString(line.left(8), "hh.mm.ss");
+            printf("Found record. Lag: %d ms\n", recordTime.msecsTo(sendTime));
+            return true;
+        }
+    }
+    while (!line.isNull());
+
+    return false;
+}
+
 void ServerClientTest::initTestCase()
 {
+    logFile.setFileName(logFileName);
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+    logFile.close();
 
+    Client client(QHostAddress(clientIP_base),
+                  clientPort_base,
+                  QHostAddress(serverIP));
+    pFirstClient = std::make_unique<Client>(client);
+//    pFirstClient = std::make_unique<Client>(new Client(QHostAddress(clientIP_base),
+//                                                       clientPort_base,
+//                                                       QHostAddress(serverIP)));
+}
+
+void ServerClientTest::failedAuthorizationTest_1()
+{
+    printf("\n");
+
+    QByteArray msg;
+    msg.append(authWord.toUtf8());
+    //No login send
+
+    pFirstClient->send(msg, portForAuthorization);
+
+    auto received = pFirstClient->tryReceive(1500);
+
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
+}
+
+void ServerClientTest::failedAuthorizationTest_2()
+{
+    printf("\n");
+
+    QByteArray msg;
+    msg.append(authWord.toUtf8());
+    QByteArray oversizedLogin;
+    oversizedLogin.fill(0xAA, maxLoginSize + authWordLength + 1);
+    msg.append(oversizedLogin);
+
+    pFirstClient->send(msg, portForAuthorization);
+
+    auto received = pFirstClient->tryReceive(1500);
+
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
+}
+
+void ServerClientTest::failedAuthorizationTest_3()
+{
+    printf("\n");
+
+    QByteArray msg;
+    msg.append("[Au!th]");
+    msg.append(clientLogin_base.toUtf8());
+
+    pFirstClient->send(msg, portForAuthorization);
+
+    auto received = pFirstClient->tryReceive(1500);
+
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
 }
 
 void ServerClientTest::authorizationTest()
 {
     printf("\n");
-    QUdpSocket xmt_sock;
-    if ( !xmt_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << xmt_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
 
     QByteArray msg;
-    msg.append(loginWord.toUtf8());
+    msg.append(authWord.toUtf8());
     msg.append(clientLogin_base);
 
-    xmt_sock.connectToHost(QHostAddress(serverIP), portForAuthorization);
-    if ( !xmt_sock.waitForConnected(1))
-        QFAIL("UDP connection to server timeout");
+    pFirstClient->send(msg, portForAuthorization);
 
-    qint64 r1 = xmt_sock.write(msg);
-    if (r1 != msg.length())
-        QFAIL("Client to server msg send failure");
-    xmt_sock.close();
+    clientToken_base.append(pFirstClient->tryReceive(1500));
 
-    QUdpSocket rcv_sock;
-    if ( !rcv_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << rcv_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
-
-    bool tokenReceived = false;
-    QElapsedTimer tmr;
-    tmr.start();
-    while (tmr.elapsed() < 1500)
-        if (rcv_sock.hasPendingDatagrams())
-        {
-            QByteArray received;
-            received.resize(rcv_sock.pendingDatagramSize());
-            rcv_sock.readDatagram(received.data(), received.size());
-
-            clientToken_base.append(received);
-            tokenReceived = true;
-            break;
-        }
-    rcv_sock.close();
-    QVERIFY2(tokenReceived, "Server didn't sent token");
+    QVERIFY2(clientToken_base.isEmpty() == false, "Server didn't sent token");
 }
 
 void ServerClientTest::incorrectMsgStructureTest()
 {
     printf("\n");
 
-    QUdpSocket xmt_sock;
-    if ( !xmt_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << xmt_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
-
-    QString msgString("Hello, Server!");
+    QString msgString("test_msg_1");
     QString wrongTokenWord("[!Token]");
+
     QByteArray msg;
     msg.append(loginWord.toUtf8());
     msg.append(clientLogin_base.toUtf8());
@@ -80,51 +119,21 @@ void ServerClientTest::incorrectMsgStructureTest()
     msg.append(msgWord.toUtf8());
     msg.append(msgString.toUtf8());
 
-    xmt_sock.connectToHost(serverIP, portForMessages);
-    if ( !xmt_sock.waitForConnected(1))
-        QFAIL("UDP connection to server timeout");
+    pFirstClient->send(msg, portForLogRecord, msgString);
 
-    qint64 r1 = xmt_sock.write(msg);
-    if (r1 != msg.length())
-        QFAIL("Client to server msg send failure");
-    xmt_sock.close();
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
 
-    QUdpSocket rcv_sock;
-    if ( !rcv_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << rcv_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
-    bool errorMsgReceived = false;
-    QElapsedTimer tmr;
-    tmr.start();
-    while (tmr.elapsed() < 1500)
-        if (rcv_sock.hasPendingDatagrams())
-        {
-            QByteArray received;
-            received.resize(rcv_sock.pendingDatagramSize());
-            rcv_sock.readDatagram(received.data(), received.size());
-
-            //ПРОВЕРКА СООБЩЕНИЯ ОБ ОШИБКЕ
-            errorMsgReceived = true;
-            break;
-        }
-    rcv_sock.close();
-    QVERIFY2(errorMsgReceived, "Server didn't sent error message");
+    auto sent = pFirstClient->showSentHistory().last();
+    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    logFile.close();
 }
 
 void ServerClientTest::incorrectLoginTest()
 {
     printf("\n");
-    QUdpSocket xmt_sock;
-    if ( !xmt_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << xmt_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
 
-    QString msgString("Hello, Server!");
-    QString wrongloginWord("Clien!t");
+    QString msgString("test_msg_2");
+    QString wrongloginWord("[Clien!t]");
     QByteArray msg;
     msg.append(wrongloginWord.toUtf8());
     msg.append(clientLogin_base.toUtf8());
@@ -133,52 +142,20 @@ void ServerClientTest::incorrectLoginTest()
     msg.append(msgWord.toUtf8());
     msg.append(msgString.toUtf8());
 
-    xmt_sock.connectToHost(serverIP, portForMessages);
-    if ( !xmt_sock.waitForConnected(1))
-        QFAIL("UDP connection to server timeout");
+    pFirstClient->send(msg, portForLogRecord, msgString);
 
-    qint64 r1 = xmt_sock.write(msg);
-    if (r1 != msg.length())
-        QFAIL("Client to server msg send failure");
-    xmt_sock.close();
-
-    QUdpSocket rcv_sock;
-    if ( !rcv_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << rcv_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
-    bool errorMsgReceived = false;
-    QElapsedTimer tmr;
-    tmr.start();
-    while (tmr.elapsed() < 1500)
-        if (rcv_sock.hasPendingDatagrams())
-        {
-            QByteArray received;
-            received.resize(rcv_sock.pendingDatagramSize());
-            rcv_sock.readDatagram(received.data(), received.size());
-
-            //ПРОВЕРКА СООБЩЕНИЯ ОБ ОШИБКЕ
-            errorMsgReceived = true;
-            break;
-        }
-    rcv_sock.close();
-    //READ LOG FILE!!!!!!!!!!!!!!!!!!!
-    QVERIFY2(errorMsgReceived, "Server didn't sent error message");
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+    auto sent = pFirstClient->showSentHistory().last();
+    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    logFile.close();
 }
 
 void ServerClientTest::incorrectTokenTest()
 {
     printf("\n");
-    QUdpSocket xmt_sock;
-    if ( !xmt_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << xmt_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
 
-    QString msgString("Hello, Server!");
-    QByteArray wrongToken{"\x4\x8\x15\x16\x23\x42"};
+    QString msgString("test_msg_3");
+    QString wrongToken{"815162342"};
 
     QByteArray msg;
     msg.append(loginWord.toUtf8());
@@ -188,47 +165,22 @@ void ServerClientTest::incorrectTokenTest()
     msg.append(msgWord.toUtf8());
     msg.append(msgString.toUtf8());
 
-    xmt_sock.connectToHost(serverIP, portForMessages);
-    if ( !xmt_sock.waitForConnected(1))
-        QFAIL("UDP connection to server timeout");
+    pFirstClient->send(msg, portForLogRecord, msgString);
+    auto received = pFirstClient->tryReceive(1500);
 
-    qint64 r1 = xmt_sock.write(msg);
-    if (r1 != msg.length())
-        QFAIL("Client to server msg send failure");
-    xmt_sock.close();
+    QVERIFY2(received.isEmpty() == false, "Server didn't sent error message");
 
-    QUdpSocket rcv_sock;
-    if ( !rcv_sock.bind(QHostAddress(clientIP_base), clientPort_base))
-    {
-        qDebug() << rcv_sock.errorString();
-        QFAIL("Failed to bind rcv socket");
-    }
-    bool errorMsgReceived = false;
-    QElapsedTimer tmr;
-    tmr.start();
-    while (tmr.elapsed() < 1500)
-        if (rcv_sock.hasPendingDatagrams())
-        {
-            QByteArray received;
-            received.resize(rcv_sock.pendingDatagramSize());
-            rcv_sock.readDatagram(received.data(), received.size());
-
-            //ПРОВЕРКА СООБЩЕНИЯ ОБ ОШИБКЕ
-            errorMsgReceived = true;
-            break;
-        }
-    rcv_sock.close();
-    //READ LOG FILE!!!!!!!!!!!!!!!!!!!
-    QVERIFY2(errorMsgReceived, "Server didn't sent error message");
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+    auto sent = pFirstClient->showSentHistory().last();
+    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    logFile.close();
 }
 
 void ServerClientTest::msgRecordTest()
 {
     printf("\n");
-    QUdpSocket xmt_sock;
-    xmt_sock.bind(QHostAddress(clientIP_base), clientPort_base);
 
-    QString msgString("Hello, Server!");
+    QString msgString("test_msg_4");
 
     QByteArray msg;
     msg.append(loginWord.toUtf8());
@@ -238,16 +190,15 @@ void ServerClientTest::msgRecordTest()
     msg.append(msgWord.toUtf8());
     msg.append(msgString.toUtf8());
 
-    xmt_sock.connectToHost(serverIP, portForMessages);
-    if ( !xmt_sock.waitForConnected(1))
-        QFAIL("UDP connection to server timeout");
+    pFirstClient->send(msg, portForLogRecord, msgString);
+    auto received = pFirstClient->tryReceive(1500);
 
-    qint64 r1 = xmt_sock.write(msg);
-    if (r1 != msg.length())
-        QFAIL("Client to server msg send failure");
-    xmt_sock.close();
+    QVERIFY2(received.isEmpty() == true, "Server sent error message");
 
-    //READ LOG FILE
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+    auto sent = pFirstClient->showSentHistory().last();
+    QVERIFY2(findLogLine(sent.time, sent.message), "Server haven't recorded the message");
+    logFile.close();
 }
 
 void ServerClientTest::stressTest()

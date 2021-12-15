@@ -6,34 +6,47 @@
 #include <QUdpSocket>
 #include <QElapsedTimer>
 #include <iostream>
+#include <stack>
+#include <memory>
 
-const quint16 portForAuthorization = 8000;
-const quint16 portForMessages = 8001;
-const QString loginWord = "[Login]";
-const QString tokenWord = "[Token]";
-const QString msgWord   = "[Msg]";
+#include "hcommon.h"
+#include "client.h"
+
+class Client;
 
 class ServerClientTest : public QObject
 {
     Q_OBJECT
 public:
-    explicit ServerClientTest(QString serverIP_inp, QString clientIP_base_inp);
+    explicit ServerClientTest(QString logFileName_inp,
+                              QString serverIP_inp,
+                              QString clientIP_base_inp);
 
 private:
+    std::unique_ptr<Client> pFirstClient;
+    std::stack<Client> clientStack;
     quint16 clientPort_base = 1100;
     QString clientLogin_base = "Client";
     QByteArray clientToken_base;
     QString clientIP_base;
     QString serverIP;
-    void incorrectMsgStructureTest();
-    void incorrectLoginTest();
-    void incorrectTokenTest();
+    QString logFileName;
+    QFile logFile;
+    bool findLogLine(QTime sendTime, QString searchLine);
+
     void stressTest();
     void loadTest();
 
+
 private slots:
     void initTestCase();
+    void failedAuthorizationTest_1();
+    void failedAuthorizationTest_2();
+    void failedAuthorizationTest_3();
     void authorizationTest();
+    void incorrectMsgStructureTest();
+    void incorrectLoginTest();
+    void incorrectTokenTest();
     void msgRecordTest();
     void cleanupTestCase();
 };

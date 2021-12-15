@@ -3,7 +3,7 @@ QT -= gui
 QT += network
 QT += testlib
 
-CONFIG += c++11
+CONFIG += c++14
 
 TARGET = Server_test
 CONFIG += console
@@ -12,7 +12,10 @@ CONFIG -= app_bundle
 TEMPLATE = app
 
 SOURCES += main.cpp \
-    serverClientTest.cpp
+    serverClientTest.cpp \
+    client.cpp
 
 HEADERS += \
-    serverclientconnection.h
+    serverclientconnection.h \
+    client.h \
+    hcommon.h
