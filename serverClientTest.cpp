@@ -1,4 +1,4 @@
-#include "serverclientconnection.h"
+#include "serverClientTest.h"
 
 ServerClientTest::ServerClientTest(QString logFileName_inp,
                                    QString serverIP_inp,
@@ -9,22 +9,40 @@ ServerClientTest::ServerClientTest(QString logFileName_inp,
     serverIP = serverIP_inp;
 }
 
-bool ServerClientTest::findLogLine(QTime sendTime, QString searchLine)
+bool ServerClientTest::findLogLine(QString searchLine)
 {
     QTextStream logStream (&logFile);
     QString line;
     do {
         line = logStream.readLine();
-        if (line.contains(searchLine, Qt::CaseSensitive))
-        {
-            auto recordTime = QTime::fromString(line.left(8), "hh.mm.ss");
-            printf("Found record. Lag: %d ms\n", recordTime.msecsTo(sendTime));
+
+        if (line.mid(13) == searchLine)
             return true;
-        }
     }
     while (!line.isNull());
 
     return false;
+}
+
+int ServerClientTest::getLag(QTime sendTime, QString searchLine)
+{
+    QTextStream logStream (&logFile);
+    QString line;
+    do {
+        line = logStream.readLine();
+
+        if (line.mid(13) == searchLine)
+        {
+            auto recordTime = QTime::fromString(line.left(12), "hh.mm.ss.zzz");
+            //qDebug() << "Found record. Lag:" << sendTime.msecsTo(recordTime) << "|" << sendTime << "/" << recordTime << line << searchLine;
+            return abs(sendTime.msecsTo(recordTime));
+        }
+    }
+    while (!line.isNull());
+
+    qDebug() << "FAILED TO Find record" << searchLine;
+
+    return -1;
 }
 
 void ServerClientTest::initTestCase()
@@ -35,7 +53,8 @@ void ServerClientTest::initTestCase()
 
     Client client(QHostAddress(clientIP_base),
                   clientPort_base,
-                  QHostAddress(serverIP));
+                  QHostAddress(serverIP),
+				  clientLogin_base);
     pFirstClient = std::make_unique<Client>(client);
 //    pFirstClient = std::make_unique<Client>(new Client(QHostAddress(clientIP_base),
 //                                                       clientPort_base,
@@ -124,7 +143,7 @@ void ServerClientTest::incorrectMsgStructureTest()
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
 
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
     logFile.close();
 }
 
@@ -146,7 +165,7 @@ void ServerClientTest::incorrectLoginTest()
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
     logFile.close();
 }
 
@@ -172,7 +191,7 @@ void ServerClientTest::incorrectTokenTest()
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.time, sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
     logFile.close();
 }
 
@@ -197,13 +216,63 @@ void ServerClientTest::msgRecordTest()
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.time, sent.message), "Server haven't recorded the message");
+    QVERIFY2(findLogLine(sent.message), "Server haven't recorded the message");
     logFile.close();
 }
 
 void ServerClientTest::stressTest()
 {
     printf("\n");
+	
+    auto clientIP = QHostAddress(clientIP_base).toIPv4Address();// Just for the easier manipulations
+    auto clientPort = clientPort_base;
+    QString login;
+
+    for (int i = 0; i < maxConnects; i++)
+    {
+        login = clientLogin_base + QString::number(i);
+        clientIP++ ;
+        clientPort++;
+        Client client(QHostAddress(clientIP),
+                      clientPort,
+                      QHostAddress(serverIP),
+                      login);
+        clientVector.push_back(client);
+    }
+	
+    for (int i = 0; i < maxConnects; i++)
+    {
+        QVERIFY2(clientVector[i].authorize(), "Failed to obtain token");
+    }
+
+    for (auto msg : msgsList)
+    {
+        for (int i = 0; i < maxConnects; i++)
+        {
+            QString msgString = msg + QString::number(i);
+            QByteArray toSend;
+            toSend.append(loginWord.toUtf8());
+            toSend.append(clientVector[i].getLogin().toUtf8());
+            toSend.append(tokenWord.toUtf8());
+            toSend.append(clientVector[i].getToken());
+            toSend.append(msgWord.toUtf8());
+            toSend.append(msgString.toUtf8());
+            clientVector[i].send(toSend, portForLogRecord, msgString);
+        }
+    }
+
+    QTest::qWait(1000);
+    for (int i = 0; i < maxConnects; i++)
+    {
+        for (auto sentMsg : clientVector[i].showSentHistory())
+        {
+            QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+            auto lag = getLag(sentMsg.time, sentMsg.message);
+            qDebug() << "lag" << i << lag;
+            QVERIFY2(lag >= 0, "Server didn't recorded message");
+            logFile.close();
+        }
+    }
 }
 
 void ServerClientTest::loadTest()

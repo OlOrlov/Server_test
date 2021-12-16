@@ -1,7 +1,7 @@
 #include <QCoreApplication>
 #include <QTest>
 
-#include "serverclientconnection.h"
+#include "serverClientTest.h"
 
 int main(int argc, char *argv[])
 {

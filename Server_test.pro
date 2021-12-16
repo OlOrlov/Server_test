@@ -16,6 +16,6 @@ SOURCES += main.cpp \
     client.cpp
 
 HEADERS += \
-    serverclientconnection.h \
     client.h \
-    hcommon.h
+    hcommon.h \
+    serverClientTest.h

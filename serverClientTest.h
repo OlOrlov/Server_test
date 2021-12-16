@@ -1,12 +1,12 @@
-#ifndef SERVERCLIENTCONNECTION_H
-#define SERVERCLIENTCONNECTION_H
+#ifndef SERVERCLIENTTEST_H
+#define SERVERCLIENTTEST_H
 
 #include <QObject>
 #include <QTest>
 #include <QUdpSocket>
 #include <QElapsedTimer>
 #include <iostream>
-#include <stack>
+#include <vector>
 #include <memory>
 
 #include "hcommon.h"
@@ -24,7 +24,7 @@ public:
 
 private:
     std::unique_ptr<Client> pFirstClient;
-    std::stack<Client> clientStack;
+    std::vector<Client> clientVector;
     quint16 clientPort_base = 1100;
     QString clientLogin_base = "Client";
     QByteArray clientToken_base;
@@ -32,11 +32,14 @@ private:
     QString serverIP;
     QString logFileName;
     QFile logFile;
-    bool findLogLine(QTime sendTime, QString searchLine);
-
-    void stressTest();
+	
+	QStringList msgsList {"alpha", "betha", "gamma", 
+						  "epsilon", "zeta", "eta", 
+                          "theta", "iota", "kappa"};
+	
+    bool findLogLine(QString searchLine);
+    int getLag(QTime sendTime, QString searchLine);
     void loadTest();
-
 
 private slots:
     void initTestCase();
@@ -48,7 +51,8 @@ private slots:
     void incorrectLoginTest();
     void incorrectTokenTest();
     void msgRecordTest();
+    void stressTest();
     void cleanupTestCase();
 };
 
-#endif // SERVERCLIENTCONNECTION_H
+#endif // SERVERCLIENTTEST_H
