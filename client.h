@@ -4,6 +4,10 @@
 #include <QUdpSocket>
 #include <QTime>
 #include <QElapsedTimer>
+#include <thread>
+#include <QThread>
+#include <condition_variable>
+#include <mutex>
 #include "hcommon.h"
 
 struct sentMsg{

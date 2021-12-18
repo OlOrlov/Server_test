@@ -57,49 +57,59 @@ QByteArray Client::tryReceive(qint64 timeout)
             rcv_sock.readDatagram(received.data(), received.size());
             return received;
         }
-    qDebug()<<"No message received";
     return QByteArray("");
 }
 
 bool Client::authorize()
 {
     token.resize(4);
+    bool tokenReceived = false;
+
     QUdpSocket xmt_sock;
-    QUdpSocket rcv_sock;
 
     auto msg = (authWord + login).toUtf8();
-    if ( !xmt_sock.bind(QHostAddress(clientIP), clientPort))
+    if ( !xmt_sock.bind(QHostAddress(clientIP), clientPort, QUdpSocket::ReuseAddressHint))
     {
         qDebug() << "Failed to bind rcv socket" << xmt_sock.errorString();
         return false;
     }
 
-    QElapsedTimer tmrr;
-    QByteArray received;
-    received.resize(4);
+    std::mutex mtxForCV;
+    std::unique_lock<std::mutex> lockForCV(mtxForCV);
+    std::condition_variable waitUntilReceiving;
+
+    std::thread rcvThread([&] () mutable {
+        QUdpSocket rcv_sock;
+        if ( !rcv_sock.bind(QHostAddress(clientIP), clientPort, QUdpSocket::ReuseAddressHint))
+        {
+            qDebug() << "Failed to bind rcv socket" << rcv_sock.errorString();
+        }
+
+        QElapsedTimer tmrr;
+        tmrr.start();
+        waitUntilReceiving.notify_one();
+
+        while (!tokenReceived)
+        {
+            if (rcv_sock.hasPendingDatagrams())
+            {
+                rcv_sock.readDatagram(token.data(), 4);
+                tokenReceived = true;
+            }
+
+            if (tmrr.elapsed() > 3000)
+                break;
+        }
+    });
+
+    waitUntilReceiving.wait(lockForCV);
 
     xmt_sock.connectToHost(serverIP, portForAuthorization);
     xmt_sock.waitForConnected(1);
-
-    tmrr.start();
-
-    auto qha = QHostAddress(clientIP);
     xmt_sock.write(msg);
     xmt_sock.close();
 
-    rcv_sock.bind(qha, clientPort);
+    rcvThread.join();
 
-    while (true) {
-        if (rcv_sock.hasPendingDatagrams())
-        {
-            rcv_sock.readDatagram(token.data(), 4);
-            return true;
-        }
-
-        if (tmrr.elapsed() > 2000)
-            break;
-
-    }
-
-    return false;
+    return tokenReceived;
 }

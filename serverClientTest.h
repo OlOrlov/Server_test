@@ -39,7 +39,6 @@ private:
 	
     bool findLogLine(QString searchLine);
     int getLag(QTime sendTime, QString searchLine);
-    void loadTest();
 
 private slots:
     void initTestCase();
@@ -52,6 +51,7 @@ private slots:
     void incorrectTokenTest();
     void msgRecordTest();
     void stressTest();
+    void loadTest();
     void cleanupTestCase();
 };
 

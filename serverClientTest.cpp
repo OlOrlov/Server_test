@@ -34,13 +34,10 @@ int ServerClientTest::getLag(QTime sendTime, QString searchLine)
         if (line.mid(13) == searchLine)
         {
             auto recordTime = QTime::fromString(line.left(12), "hh.mm.ss.zzz");
-            //qDebug() << "Found record. Lag:" << sendTime.msecsTo(recordTime) << "|" << sendTime << "/" << recordTime << line << searchLine;
             return abs(sendTime.msecsTo(recordTime));
         }
     }
     while (!line.isNull());
-
-    qDebug() << "FAILED TO Find record" << searchLine;
 
     return -1;
 }
@@ -48,7 +45,7 @@ int ServerClientTest::getLag(QTime sendTime, QString searchLine)
 void ServerClientTest::initTestCase()
 {
     logFile.setFileName(logFileName);
-    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+    QVERIFY2(logFile.open(QIODevice::ReadOnly), "Can't open log file");
     logFile.close();
 
     Client client(QHostAddress(clientIP_base),
@@ -56,9 +53,6 @@ void ServerClientTest::initTestCase()
                   QHostAddress(serverIP),
 				  clientLogin_base);
     pFirstClient = std::make_unique<Client>(client);
-//    pFirstClient = std::make_unique<Client>(new Client(QHostAddress(clientIP_base),
-//                                                       clientPort_base,
-//                                                       QHostAddress(serverIP)));
 }
 
 void ServerClientTest::failedAuthorizationTest_1()
@@ -67,13 +61,13 @@ void ServerClientTest::failedAuthorizationTest_1()
 
     QByteArray msg;
     msg.append(authWord.toUtf8());
-    //No login send
+    //No login send - incorrect authorization form
 
     pFirstClient->send(msg, portForAuthorization);
-
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token"
+                                         " - incorrect authorization form was sent");
 }
 
 void ServerClientTest::failedAuthorizationTest_2()
@@ -87,10 +81,10 @@ void ServerClientTest::failedAuthorizationTest_2()
     msg.append(oversizedLogin);
 
     pFirstClient->send(msg, portForAuthorization);
-
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token"
+                                         " - incorrect authorization form was sent");
 }
 
 void ServerClientTest::failedAuthorizationTest_3()
@@ -105,7 +99,8 @@ void ServerClientTest::failedAuthorizationTest_3()
 
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token");
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token"
+                                         " - incorrect authorization form was sent");
 }
 
 void ServerClientTest::authorizationTest()
@@ -117,7 +112,6 @@ void ServerClientTest::authorizationTest()
     msg.append(clientLogin_base);
 
     pFirstClient->send(msg, portForAuthorization);
-
     clientToken_base.append(pFirstClient->tryReceive(1500));
 
     QVERIFY2(clientToken_base.isEmpty() == false, "Server didn't sent token");
@@ -143,7 +137,8 @@ void ServerClientTest::incorrectMsgStructureTest()
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
 
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message"
+                                                 " - incorrect message form was sent");
     logFile.close();
 }
 
@@ -165,7 +160,8 @@ void ServerClientTest::incorrectLoginTest()
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message"
+                                                 " - incorrect message form was sent");
     logFile.close();
 }
 
@@ -174,7 +170,7 @@ void ServerClientTest::incorrectTokenTest()
     printf("\n");
 
     QString msgString("test_msg_3");
-    QString wrongToken{"815162342"};
+    QString wrongToken{"481516234"};
 
     QByteArray msg;
     msg.append(loginWord.toUtf8());
@@ -187,11 +183,13 @@ void ServerClientTest::incorrectTokenTest()
     pFirstClient->send(msg, portForLogRecord, msgString);
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == false, "Server didn't sent error message");
+    QVERIFY2(received.isEmpty() == false, "Server didn't sent error message"
+                                          " - incorrect token was sent");
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message");
+    QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message"
+                                                 " - incorrect message form was sent");
     logFile.close();
 }
 
@@ -216,7 +214,8 @@ void ServerClientTest::msgRecordTest()
 
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
     auto sent = pFirstClient->showSentHistory().last();
-    QVERIFY2(findLogLine(sent.message), "Server haven't recorded the message");
+    QVERIFY2(findLogLine(sent.message), "Server haven't recorded the message"
+                                        " - incorrect message form was sent");
     logFile.close();
 }
 
@@ -224,11 +223,12 @@ void ServerClientTest::stressTest()
 {
     printf("\n");
 	
-    auto clientIP = QHostAddress(clientIP_base).toIPv4Address();// Just for the easier manipulations
+    auto clientIP = QHostAddress(clientIP_base).toIPv4Address();// Just to ease the address manipulations
     auto clientPort = clientPort_base;
     QString login;
 
-    for (int i = 0; i < maxConnects; i++)
+    // Making test clients
+    for (int i = 0; i < maxConnectsForStressTest; i++)
     {
         login = clientLogin_base + QString::number(i);
         clientIP++ ;
@@ -240,14 +240,17 @@ void ServerClientTest::stressTest()
         clientVector.push_back(client);
     }
 	
-    for (int i = 0; i < maxConnects; i++)
+    // Getting tokens for test clients
+    for (int i = 0; i < maxConnectsForStressTest; i++)
     {
-        QVERIFY2(clientVector[i].authorize(), "Failed to obtain token");
+        auto authorizationResult = clientVector[i].authorize();
+        QVERIFY2(authorizationResult, "Failed to obtain token");
     }
 
+    // Sending test messages
     for (auto msg : msgsList)
     {
-        for (int i = 0; i < maxConnects; i++)
+        for (int i = 0; i < maxConnectsForStressTest; i++)
         {
             QString msgString = msg + QString::number(i);
             QByteArray toSend;
@@ -261,23 +264,64 @@ void ServerClientTest::stressTest()
         }
     }
 
-    QTest::qWait(1000);
-    for (int i = 0; i < maxConnects; i++)
+    QTest::qWait(1500);
+    printf("ok\n");
+
+    std::vector<int> lagReceived;
+    for (int i = 0; i < maxConnectsForStressTest; i++)
     {
         for (auto sentMsg : clientVector[i].showSentHistory())
         {
             QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
             auto lag = getLag(sentMsg.time, sentMsg.message);
-            qDebug() << "lag" << i << lag;
+
+            if (lag < 0)
+                qDebug() << sentMsg.message;
             QVERIFY2(lag >= 0, "Server didn't recorded message");
+            lagReceived.push_back(lag);
             logFile.close();
         }
     }
+
+    int meanLag = 0;
+    for (auto lag : lagReceived)
+        meanLag += lag;
+
+    meanLag /= maxConnectsForStressTest;
+    printf("Mean lag for 75 simultaneous connections is %d ms\n\n", meanLag);
 }
 
 void ServerClientTest::loadTest()
 {
-    printf("\n");
+    auto clientIP = QHostAddress(clientIP_base).toIPv4Address();// Just for the easier manipulations
+    auto clientPort = clientPort_base;
+    QString login;
+
+    quint16 clientsInVector = clientVector.size();
+
+    for (int i = clientsInVector - 1; i < maxConnectsForLoadTest; i++)
+    {
+        login = clientLogin_base + QString::number(i);
+        clientIP++ ;
+        clientPort++;
+        Client client(QHostAddress(clientIP),
+                      clientPort,
+                      QHostAddress(serverIP),
+                      login);
+        clientVector.push_back(client);
+    }
+
+    for (int i = 0; i < maxConnectsForLoadTest; i++)
+    {
+        auto authorizationResult = clientVector[i].authorize();
+        if ( !authorizationResult)
+        {
+            if (i < maxServerConnects-1)
+                QFAIL("Failed to obtain token");
+            else
+                break;
+        }
+    }
 }
 
 void ServerClientTest::cleanupTestCase()
