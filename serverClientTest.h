@@ -42,9 +42,9 @@ private:
 
 private slots:
     void initTestCase();
-    void failedAuthorizationTest_1();
-    void failedAuthorizationTest_2();
-    void failedAuthorizationTest_3();
+    void authorizationFailTest_1();
+    void authorizationFailTest_2();
+    void authorizationFailTest_3();
     void authorizationTest();
     void incorrectMsgStructureTest();
     void incorrectLoginTest();

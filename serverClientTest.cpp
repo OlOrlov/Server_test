@@ -55,7 +55,7 @@ void ServerClientTest::initTestCase()
     pFirstClient = std::make_unique<Client>(client);
 }
 
-void ServerClientTest::failedAuthorizationTest_1()
+void ServerClientTest::authorizationFailTest_1()
 {
     printf("\n");
 
@@ -66,11 +66,11 @@ void ServerClientTest::failedAuthorizationTest_1()
     pFirstClient->send(msg, portForAuthorization);
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token"
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have responded"
                                          " - incorrect authorization form was sent");
 }
 
-void ServerClientTest::failedAuthorizationTest_2()
+void ServerClientTest::authorizationFailTest_2()
 {
     printf("\n");
 
@@ -83,11 +83,11 @@ void ServerClientTest::failedAuthorizationTest_2()
     pFirstClient->send(msg, portForAuthorization);
     auto received = pFirstClient->tryReceive(1500);
 
-    QVERIFY2(received.isEmpty() == true, "Server shouldn't have sent token"
+    QVERIFY2(received.isEmpty() == true, "Server shouldn't have responded"
                                          " - incorrect authorization form was sent");
 }
 
-void ServerClientTest::failedAuthorizationTest_3()
+void ServerClientTest::authorizationFailTest_3()
 {
     printf("\n");
 
@@ -185,9 +185,11 @@ void ServerClientTest::incorrectTokenTest()
 
     QVERIFY2(received.isEmpty() == false, "Server didn't sent error message"
                                           " - incorrect token was sent");
-
+    QVERIFY2(received == errMsg, "Server sent the wrong message (expected errMsg");
     QVERIFY2(logFile.open(QIODevice::ReadOnly), "Failed to open log");
+
     auto sent = pFirstClient->showSentHistory().last();
+
     QVERIFY2(findLogLine(sent.message) == false, "Server have recorded the message"
                                                  " - incorrect message form was sent");
     logFile.close();
@@ -264,8 +266,7 @@ void ServerClientTest::stressTest()
         }
     }
 
-    QTest::qWait(1500);
-    printf("ok\n");
+    QTest::qWait(2500);
 
     std::vector<int> lagReceived;
     for (int i = 0; i < maxConnectsForStressTest; i++)
@@ -299,7 +300,7 @@ void ServerClientTest::loadTest()
 
     quint16 clientsInVector = clientVector.size();
 
-    for (int i = clientsInVector - 1; i < maxConnectsForLoadTest; i++)
+    for (int i = clientsInVector; i < maxConnectsForLoadTest; i++)
     {
         login = clientLogin_base + QString::number(i);
         clientIP++ ;
@@ -311,13 +312,16 @@ void ServerClientTest::loadTest()
         clientVector.push_back(client);
     }
 
-    for (int i = 0; i < maxConnectsForLoadTest; i++)
+    for (int i = clientsInVector; i < maxConnectsForLoadTest; i++)
     {
         auto authorizationResult = clientVector[i].authorize();
         if ( !authorizationResult)
         {
             if (i < maxServerConnects-1)
+            {
+                qDebug() << "No token received for client" << i <<"\n";
                 QFAIL("Failed to obtain token");
+            }
             else
                 break;
         }

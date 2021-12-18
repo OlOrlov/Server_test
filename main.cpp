@@ -10,8 +10,10 @@ int main(int argc, char *argv[])
     QString clientIP("127.0.1.1");
     QString serverIP("127.0.0.1");
 
-    QString logFileName = "C:/Users/olorl/OneDrive/Desktop/Work/Server-Parallel logging/debug/Log.txt";
-    //QString logFileName = "C:/Users/olorl/OneDrive/Desktop/Work/Server-Parallel logging/debug/Log.txt";
+    printf("\nTurn server on localhost and then enter full address to it's Log.txt:\n");
+
+    QTextStream s(stdin);
+    QString logFileName = s.readLine();
 
     qputenv("QTEST_FUNCTION_TIMEOUT", "240000");
     QTest::qExec(new ServerClientTest(logFileName, serverIP, clientIP), argc, argv);
